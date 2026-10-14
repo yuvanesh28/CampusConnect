@@ -1,0 +1,315 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#10172a">
+<title>CampusConnect Live Tracker</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1120;color:#f8fafc;font-family:system-ui,sans-serif}
+header{padding:22px;background:linear-gradient(135deg,#312e81,#111827)}
+header h1{margin:0}
+main{max-width:720px;margin:auto;padding:15px}
+.panel{background:#151e30;border:1px solid #334155;border-radius:15px;padding:16px;margin-bottom:15px}
+h2{font-size:19px}
+input,button{width:100%;padding:12px;margin:5px 0;border-radius:9px;font:inherit}
+input{background:#0b1120;color:white;border:1px solid #475569}
+button{background:#2563eb;color:white;border:0;font-weight:600}
+.secondary{background:#334155}
+.danger{background:#991b1b}
+.muted{color:#aab7cc;font-size:14px}
+.card{border-top:1px solid #334155;padding:13px 0}
+.tag{font-size:12px;padding:4px 8px;border-radius:20px;background:#26354a}
+a{color:#93c5fd}
+.row{display:flex;gap:8px}
+.row>*{flex:1;min-width:0}
+</style>
+</head>
+<body>
+<header>
+<h1>📍 CampusConnect</h1>
+<p>Live timetable • Classroom navigation • Faculty tracker</p>
+</header>
+
+<main>
+<section class="panel">
+<h2>🔐 Login</h2>
+<input id="email" type="email" placeholder="Registered email">
+<input id="password" type="password" placeholder="Password">
+<div class="row">
+<button id="login">Sign in</button>
+<button id="logout" class="secondary">Sign out</button>
+</div>
+<p id="account" class="muted">Not signed in</p>
+</section>
+
+<section class="panel">
+<h2>📚 Live Timetable</h2>
+<p class="muted">Today's classes and current status</p>
+<div id="classes">Sign in to load the timetable.</div>
+</section>
+
+<section class="panel">
+<h2>🗺️ Find a Classroom</h2>
+<input id="search" placeholder="Search subject, block, floor or room">
+<div id="results"></div>
+</section>
+
+<section class="panel">
+<h2>📡 Faculty Location Sharing</h2>
+<p class="muted">Sharing is optional and requires browser permission.</p>
+<button id="start">Start sharing my location</button>
+<button id="stop" class="danger">Stop sharing</button>
+<p id="shareStatus" class="muted">Location sharing is off.</p>
+</section>
+
+<section class="panel">
+<h2>👩‍🏫 Faculty Sharing Locations</h2>
+<div id="locations">Sign in to view shared locations.</div>
+</section>
+
+<p id="message" class="muted"></p>
+</main>
+
+<script type="module">
+import {initializeApp} from
+"https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut}
+from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
+import {getFirestore,doc,getDoc,collection,onSnapshot,setDoc,deleteDoc}
+from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+// Replace these placeholders with your Firebase Web App configuration.
+const firebaseConfig={
+ apiKey:"YOUR_API_KEY",
+ authDomain:"YOUR_PROJECT_ID.firebaseapp.com",
+ projectId:"YOUR_PROJECT_ID",
+ appId:"YOUR_APP_ID"
+};
+
+const app=initializeApp(firebaseConfig);
+const auth=getAuth(app);
+const db=getFirestore(app);
+const $=id=>document.getElementById(id);
+
+let profile=null;
+let watchId=null;
+let sharing=false;
+let stopClasses=null;
+let stopLocations=null;
+let classData=[];
+
+function say(text){$("message").textContent=text;}
+
+$("login").onclick=async()=>{
+ try{
+  await signInWithEmailAndPassword(
+   auth,$("email").value.trim(),$("password").value
+  );
+  say("Signed in successfully.");
+ }catch(e){say("Login error: "+e.message);}
+};
+
+$("logout").onclick=async()=>{
+ await stopSharing();
+ try{await signOut(auth);}
+ catch(e){say(e.message);}
+};
+
+function statusOf(c){
+ const now=Date.now();
+ const start=new Date(c.startAt).getTime();
+ const end=new Date(c.endAt).getTime();
+ if(now<start)return "Upcoming";
+ if(now<end)return "Ongoing";
+ return "Completed";
+}
+
+function addClassCard(container,c){
+ const card=document.createElement("div");
+ card.className="card";
+ const title=document.createElement("h3");
+ title.textContent=c.subject||"Class";
+ const detail=document.createElement("p");
+ detail.textContent=
+  (c.facultyName||"Faculty not listed")+" • "+
+  (c.block||"Block not set")+" • Floor "+
+  (c.floor??"—")+" • Room "+(c.room||"—");
+ const time=document.createElement("p");
+ time.className="muted";
+ time.textContent=new Date(c.startAt).toLocaleTimeString([],{
+  hour:"2-digit",minute:"2-digit"
+ })+" – "+new Date(c.endAt).toLocaleTimeString([],{
+  hour:"2-digit",minute:"2-digit"
+ });
+ const tag=document.createElement("span");
+ tag.className="tag";
+ tag.textContent=statusOf(c);
+ const br=document.createElement("br");
+ const link=document.createElement("a");
+ link.className="map-link";
+ link.target="_blank";
+ link.rel="noopener";
+ link.textContent="Navigate to classroom ↗";
+ const query=Number.isFinite(c.lat)&&Number.isFinite(c.lng)
+  ?c.lat+","+c.lng
+  :(c.block||"")+" "+(c.room||"")+" SRM Kattankulathur";
+ link.href="https://www.google.com/maps/search/?api=1&query="+
+  encodeURIComponent(query);
+ card.append(title,detail,time,tag,br,link);
+ container.append(card);
+}
+
+function renderClasses(){
+ const now=new Date();
+ const today=now.getFullYear()+"-"+
+  String(now.getMonth()+1).padStart(2,"0")+"-"+
+  String(now.getDate()).padStart(2,"0");
+ const todays=classData.filter(c=>
+  typeof c.startAt==="string"&&
+  c.startAt.slice(0,10)===today&&
+  !isNaN(new Date(c.startAt).getTime())&&
+  !isNaN(new Date(c.endAt).getTime())
+ ).sort((a,b)=>a.startAt.localeCompare(b.startAt));
+
+ $("classes").replaceChildren();
+ if(!todays.length){
+  $("classes").textContent="No classes entered for today yet.";
+ }else{
+  todays.forEach(c=>addClassCard($("classes"),c));
+ }
+
+ renderSearch();
+}
+
+function renderSearch(){
+ const q=$("search").value.toLowerCase().trim();
+ const results=classData.filter(c=>
+  [c.subject,c.facultyName,c.block,c.floor,c.room]
+   .some(v=>String(v??"").toLowerCase().includes(q))
+ );
+ $("results").replaceChildren();
+ if(!results.length){
+  $("results").textContent="No matching classes found.";
+  return;
+ }
+ results.forEach(c=>addClassCard($("results"),c));
+}
+$("search").addEventListener("input",renderSearch);
+
+// This toggle can only work after Firebase has confirmed the user's role.
+$("start").onclick=async()=>{
+ if(!auth.currentUser||profile?.role!=="faculty"){
+  say("Only an approved faculty account can share location.");
+  return;
+ }
+ if(!navigator.geolocation){
+  say("Geolocation is not supported by this browser.");
+  return;
+ }
+ if(!confirm("Share your current location with signed-in users?"))return;
+
+ sharing=true;
+ $("shareStatus").textContent="Waiting for location permission...";
+ watchId=navigator.geolocation.watchPosition(async pos=>{
+  if(!sharing||!auth.currentUser)return;
+  try{
+   await setDoc(doc(db,"locations",auth.currentUser.uid),{
+    uid:auth.currentUser.uid,
+    displayName:profile.displayName||"Faculty",
+    lat:pos.coords.latitude,
+    lng:pos.coords.longitude,
+    updatedAt:new Date().toISOString()
+   });
+   $("shareStatus").textContent=
+    "Sharing ON • Updated "+new Date().toLocaleTimeString();
+  }catch(e){
+   say("Could not share location: "+e.message);
+   await stopSharing();
+  }
+ },e=>{
+  say("Location error: "+e.message);
+  stopSharing();
+ },{enableHighAccuracy:true,maximumAge:10000,timeout:20000});
+};
+
+async function stopSharing(){
+ sharing=false;
+ if(watchId!==null)navigator.geolocation.clearWatch(watchId);
+ watchId=null;
+ if(auth.currentUser&&profile?.role==="faculty"){
+  try{await deleteDoc(doc(db,"locations",auth.currentUser.uid));}
+  catch(e){say("Could not remove location: "+e.message);}
+ }
+ $("shareStatus").textContent="Location sharing is off.";
+}
+$("stop").onclick=stopSharing;
+
+function renderLocations(snapshot){
+ $("locations").replaceChildren();
+ if(snapshot.empty){
+  $("locations").textContent="No faculty locations are being shared.";
+  return;
+ }
+ snapshot.forEach(d=>{
+  const l=d.data();
+  if(typeof l.lat!=="number"||typeof l.lng!=="number")return;
+  const card=document.createElement("div");
+  card.className="card";
+  const name=document.createElement("strong");
+  name.textContent=l.displayName||"Faculty";
+  const time=document.createElement("p");
+  time.className="muted";
+  time.textContent="Last update: "+
+   (l.updatedAt?new Date(l.updatedAt).toLocaleString():"unknown");
+  const link=document.createElement("a");
+  link.target="_blank";
+  link.rel="noopener";
+  link.textContent="Open location in Maps ↗";
+  link.href="https://www.google.com/maps/search/?api=1&query="+
+   encodeURIComponent(l.lat+","+l.lng);
+  card.append(name,time,link);
+  $("locations").append(card);
+ });
+}
+
+onAuthStateChanged(auth,async user=>{
+ if(stopClasses)stopClasses();
+ if(stopLocations)stopLocations();
+ stopClasses=stopLocations=null;
+ classData=[];
+ profile=null;
+
+ if(!user){
+  $("account").textContent="Not signed in";
+  $("classes").textContent="Sign in to load classes.";
+  $("results").textContent="";
+  $("locations").textContent="Sign in to view locations.";
+  return;
+ }
+
+ try{
+  const p=await getDoc(doc(db,"users",user.uid));
+  if(!p.exists()){
+   $("account").textContent=user.email+" • Profile not configured";
+   say("Administrator must assign your role in Firestore.");
+   return;
+  }
+  profile=p.data();
+  $("account").textContent=
+   (profile.displayName||user.email)+" • "+profile.role;
+
+  stopClasses=onSnapshot(collection(db,"classes"),snap=>{
+   classData=snap.docs.map(d=>({id:d.id,...d.data()}));
+   renderClasses();
+  },e=>say("Timetable error: "+e.message));
+
+  stopLocations=onSnapshot(collection(db,"locations"),
+   renderLocations,e=>say("Location error: "+e.message));
+ }catch(e){say("Could not load profile: "+e.message);}
+});
+</script>
+</body>
+</html>
