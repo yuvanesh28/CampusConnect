@@ -1,0 +1,140 @@
+
+(() => {
+  function addCampusLiveTracker() {
+    const mapPage = document.getElementById("mapPage");
+
+    if (!mapPage || document.getElementById("campusLiveTracker")) return;
+
+    const tracker = document.createElement("div");
+    tracker.id = "campusLiveTracker";
+    tracker.style.cssText =
+      "background:#fff;border:1px solid #ececf4;border-radius:18px;padding:16px;margin:16px 0;box-shadow:0 8px 28px #24204a0a;color:#20223a";
+
+    tracker.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="background:#eeeaff;border-radius:12px;padding:10px;font-size:22px">📍</div>
+        <div>
+          <div style="font-size:18px;font-weight:750">Live Campus Tracker</div>
+          <div style="font-size:13px;color:#777b93">Find classrooms and navigate campus</div>
+        </div>
+      </div>
+
+      <label for="campusRoomSearch" style="display:block;font-size:14px;font-weight:650;margin-bottom:7px">Search classroom or building</label>
+      <input id="campusRoomSearch" placeholder="e.g. ECE Block, Room E-204"
+        style="width:100%;padding:13px;border:1px solid #e2e1ef;border-radius:12px;font-size:15px;box-sizing:border-box">
+
+      <div id="campusRoomResults" style="margin-top:10px"></div>
+
+      <button id="campusMyLocation" type="button"
+        style="width:100%;margin-top:12px;background:#5b43d6;color:white;border:0;border-radius:12px;padding:13px;font-size:15px;font-weight:650">
+        📍 Check my current location
+      </button>
+      <p id="campusLocationStatus" role="status"
+        style="font-size:13px;color:#777b93;margin:10px 0 0">
+        Your location is only requested when you tap the button.
+      </p>
+    `;
+
+    const mapList = document.getElementById("mapList");
+    if (mapList) {
+      mapList.parentNode.insertBefore(tracker, mapList);
+    } else {
+      mapPage.appendChild(tracker);
+    }
+
+    const places = [
+      { name: "ECE Block", detail: "Electronics and Communication Engineering", query: "ECE Block SRM Institute of Science and Technology Kattankulathur" },
+      { name: "Tech Block", detail: "Classrooms and laboratories", query: "Tech Block SRM Institute of Science and Technology Kattankulathur" },
+      { name: "Science Block", detail: "Science department classrooms", query: "Science Block SRM Institute of Science and Technology Kattankulathur" },
+      { name: "University Library", detail: "Library and study spaces", query: "Library SRM Institute of Science and Technology Kattankulathur" },
+      { name: "Student Centre", detail: "Student services", query: "Student Centre SRM Institute of Science and Technology Kattankulathur" }
+    ];
+
+    const search = document.getElementById("campusRoomSearch");
+    const results = document.getElementById("campusRoomResults");
+
+    function renderPlaces(value = "") {
+      const term = value.trim().toLowerCase();
+      const matches = places.filter(place =>
+        (place.name + " " + place.detail).toLowerCase().includes(term)
+      );
+
+      results.replaceChildren();
+
+      if (!matches.length) {
+        const message = document.createElement("p");
+        message.textContent = "No matching location. Try a building name above.";
+        message.style.color = "#777b93";
+        results.appendChild(message);
+        return;
+      }
+
+      matches.forEach(place => {
+        const card = document.createElement("div");
+        card.style.cssText =
+          "border:1px solid #ececf4;border-radius:12px;padding:12px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px";
+
+        const info = document.createElement("div");
+        const name = document.createElement("div");
+        name.textContent = place.name;
+        name.style.fontWeight = "700";
+
+        const detail = document.createElement("div");
+        detail.textContent = place.detail;
+        detail.style.cssText = "font-size:12px;color:#777b93;margin-top:4px";
+
+        info.append(name, detail);
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Directions";
+        button.style.cssText =
+          "background:#5b43d6;color:white;border:0;border-radius:9px;padding:9px;font-weight:600";
+
+        button.addEventListener("click", () => {
+          const url = "https://www.google.com/maps/dir/?api=1&destination=" +
+            encodeURIComponent(place.query);
+          window.open(url, "_blank", "noopener");
+        });
+
+        card.append(info, button);
+        results.appendChild(card);
+      });
+    }
+
+    search.addEventListener("input", () => renderPlaces(search.value));
+    renderPlaces();
+
+    document.getElementById("campusMyLocation").addEventListener("click", () => {
+      const status = document.getElementById("campusLocationStatus");
+
+      if (!navigator.geolocation) {
+        status.textContent = "Location is not supported by this browser.";
+        return;
+      }
+
+      status.textContent = "Requesting location permission…";
+
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          status.textContent =
+            "Location received. Accuracy: about " +
+            Math.round(position.coords.accuracy) +
+            " metres. Your location is not being sent to faculty or other students.";
+        },
+        error => {
+          status.textContent = error.code === 1
+            ? "Location permission was denied. You can enable it in your browser settings."
+            : "Could not get your location. Check device location settings and try again.";
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+      );
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", addCampusLiveTracker);
+  } else {
+    addCampusLiveTracker();
+  }
+})();
