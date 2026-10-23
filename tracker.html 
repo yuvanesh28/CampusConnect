@@ -1,0 +1,154 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#5b43d6">
+<title>CampusConnect · Live Tracker</title>
+<style>
+:root{--p:#5b43d6;--p2:#7965f0;--bg:#f6f6fb;--ink:#20223a;--muted:#777b93;--line:#e8e7f1;--green:#16845b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,sans-serif;padding-bottom:30px}
+header{background:linear-gradient(130deg,#5140c7,#7867ef);color:white;padding:24px 18px 28px;border-radius:0 0 26px 26px}
+header a{color:white;text-decoration:none;font-weight:700}
+header h1{font-size:26px;margin:22px 0 6px}
+header p{font-size:14px;color:#e9e6ff;margin:0}
+main{max-width:750px;margin:auto;padding:18px 14px}
+.card{background:white;border:1px solid var(--line);border-radius:20px;padding:18px;margin-bottom:15px;box-shadow:0 8px 25px #24204a0a}
+h2{font-size:19px;margin:0 0 7px}
+.desc{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 15px}
+label{display:block;font-size:13px;font-weight:650;margin:12px 0 7px}
+input,select{width:100%;padding:13px;border:1px solid #deddec;border-radius:12px;background:white;color:var(--ink);font:inherit}
+button,.btn{display:block;width:100%;padding:13px 15px;border:0;border-radius:12px;background:var(--p);color:white;font:inherit;font-weight:750;text-align:center;text-decoration:none;margin-top:10px}
+.secondary{background:#f0edff;color:var(--p)}
+.stop{background:#a52b42}
+.entry{padding:13px 0;border-bottom:1px solid var(--line)}
+.entry:last-child{border-bottom:0}
+.entry strong{display:block;font-size:14px}
+.meta{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.6}
+.notice{padding:12px;background:#f0edff;border-radius:12px;color:#514580;font-size:12px;line-height:1.6;margin-top:12px}
+.status{font-size:12px;color:var(--green);font-weight:750;margin-top:12px;overflow-wrap:anywhere}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:12px}
+</style>
+</head>
+<body>
+<header>
+<a href="./index.html">← Back to CampusConnect</a>
+<h1>📍 Live Tracker</h1>
+<p>Timetable, classroom directions and faculty location</p>
+</header>
+
+<main>
+<section class="card">
+<h2>🗓️ Today's timetable</h2>
+<p class="desc">This section will show your official classes after the Firebase timetable is connected.</p>
+<label for="day">Choose a day</label>
+<select id="day">
+<option>Monday</option><option>Tuesday</option>
+<option>Wednesday</option><option>Thursday</option>
+<option>Friday</option><option>Saturday</option>
+</select>
+<div id="classes" class="entry">
+<strong>Timetable not connected yet</strong>
+<div class="meta">No official classes are loaded. Firebase setup is required to display the administrator's timetable.</div>
+</div>
+</section>
+
+<section class="card">
+<h2>🧭 Classroom navigation</h2>
+<p class="desc">Search for a block, building or classroom. Check the result in Google Maps.</p>
+<label for="place">Destination</label>
+<input id="place" placeholder="e.g. TP Ganesh Hall">
+<button id="mapButton">Find on Google Maps</button>
+<a class="btn secondary" id="campusButton" href="https://www.google.com/maps/search/?api=1&query=SRM+Institute+of+Science+and+Technology+Kattankulathur" target="_blank" rel="noopener">Find SRM Kattankulathur</a>
+<p class="notice">Google Maps may not know the exact indoor classroom. Verify the building and room with official campus information.</p>
+</section>
+
+<section class="card">
+<h2>📡 Faculty location sharing</h2>
+<p class="desc">Location access must be approved by the person sharing it. This first version tests GPS on this device only; it does not publish location to students.</p>
+<label for="facultyName">Faculty display name</label>
+<input id="facultyName" placeholder="Enter faculty name">
+<button id="startButton">Allow location & start test</button>
+<button id="stopButton" class="stop" hidden>Stop sharing</button>
+<div id="locationStatus" class="meta" aria-live="polite">Location sharing is off.</div>
+<div id="coordinates" class="status"></div>
+<a id="locationMap" class="btn secondary" hidden target="_blank" rel="noopener">Open my location in Maps</a>
+<p class="notice">Multi-device live sharing requires faculty authentication, Firebase, secure database rules and an authorized account. Do not use this demo to publish real faculty locations.</p>
+</section>
+
+<footer>CampusConnect · Live Tracker prototype</footer>
+</main>
+
+<script>
+const placeInput = document.getElementById("place");
+document.getElementById("mapButton").addEventListener("click", () => {
+  const place = placeInput.value.trim();
+  if (!place) {
+    alert("Enter a building or classroom first.");
+    placeInput.focus();
+    return;
+  }
+  const query = place + ", SRM Institute of Science and Technology, Kattankulathur, Tamil Nadu";
+  window.open("https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query), "_blank", "noopener");
+});
+
+const startButton = document.getElementById("startButton");
+const stopButton = document.getElementById("stopButton");
+const statusBox = document.getElementById("locationStatus");
+const coordinates = document.getElementById("coordinates");
+const locationMap = document.getElementById("locationMap");
+let watchId = null;
+
+startButton.addEventListener("click", () => {
+  if (!document.getElementById("facultyName").value.trim()) {
+    statusBox.textContent = "Enter a display name before starting.";
+    return;
+  }
+  if (!("geolocation" in navigator)) {
+    statusBox.textContent = "Geolocation is not supported by this browser.";
+    return;
+  }
+  statusBox.textContent = "Requesting location permission…";
+  watchId = navigator.geolocation.watchPosition(
+    position => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      coordinates.textContent = "Current device coordinates: " +
+        lat.toFixed(5) + ", " + lon.toFixed(5);
+      locationMap.href = "https://www.google.com/maps?q=" +
+        encodeURIComponent(lat + "," + lon);
+      locationMap.hidden = false;
+      statusBox.textContent = "Local GPS test is active on this device only.";
+      startButton.hidden = true;
+      stopButton.hidden = false;
+    },
+    error => {
+      const messages = {
+        1: "Location permission denied. Allow location access in browser settings.",
+        2: "Your device could not determine its location. Try again outdoors.",
+        3: "Location request timed out. Please try again."
+      };
+      statusBox.textContent = messages[error.code] || "Could not access location.";
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+});
+
+stopButton.addEventListener("click", () => {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+  startButton.hidden = false;
+  stopButton.hidden = true;
+  statusBox.textContent = "Location test stopped.";
+  coordinates.textContent = "";
+  locationMap.hidden = true;
+});
+
+window.addEventListener("pagehide", () => {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+});
+</script>
+</body>
+</html>
