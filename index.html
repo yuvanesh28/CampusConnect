@@ -69,4 +69,7 @@ $('saveProfile').onclick=()=>{let p={name:$('nameInput').value.trim()||'Student'
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;$('installBtn').textContent='Install CampusConnect'});$('installBtn').onclick=async()=>{if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null}else showToast('In Chrome: tap ⋮, then Install app or Add to Home screen')};window.addEventListener('appinstalled',()=>showToast('CampusConnect installed'));
 if('serviceWorker'in navigator && location.protocol.startsWith('http'))window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 renderHome();renderFaculty();renderOffices();renderGuides();renderSchedule();loadProfile();
-</script></body></html>
+</script>
+<script src="./live-tracker.js"></script>
+</body>
+</html>
